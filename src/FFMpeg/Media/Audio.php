@@ -114,4 +114,15 @@ class Audio extends AbstractStreamableMedia
     {
         return new Waveform($this, $this->driver, $this->ffprobe, $width, $height);
     }
+    
+    /**
+     * Concatenates a list of videos into one unique video.
+     *
+     * @param  array $sources
+     * @return Concat
+     */
+    public function concat($sources)
+    {
+        return new Concat($sources, $this->driver, $this->ffprobe);
+    }
 }
