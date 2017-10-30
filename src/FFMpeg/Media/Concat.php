@@ -261,4 +261,94 @@ class Concat extends AbstractMediaType
 
         return $this;
     }
+    
+    public function saveAudioAmix(FormatInterface $format, $outputPathfile) {
+        /**
+         * @see https://ffmpeg.org/ffmpeg-formats.html#concat
+         * @see https://trac.ffmpeg.org/wiki/Concatenate
+         */
+
+        // Check the validity of the parameter
+        if(!is_array($this->sources) || (count($this->sources) == 0)) {
+            throw new InvalidArgumentException('The list of audios is not a valid array.');
+        }
+
+        // Create the commands variable
+        $commands = array();
+
+        // Prepare the parameters
+        $nbSources = 0;
+        $files = array();
+
+        // For each source, check if this is a legit file
+        // and prepare the parameters
+        foreach ($this->sources as $videoPath) {
+            $files[] = '-i';
+            $files[] = $videoPath;
+            $nbSources++;
+        }
+
+        $commands = array_merge($commands, $files);
+
+        // Set the parameters of the request
+        $commands[] = '-filter_complex';
+
+        $commands[] = 'amix=inputs=' . $nbSources .':duration=first:dropout_transition=0';
+
+        // Prepare the filters
+        $filters = clone $this->filters;
+        $filters->add(new SimpleFilter($format->getExtraParams(), 10));
+
+        if ($this->driver->getConfiguration()->has('ffmpeg.threads')) {
+            $filters->add(new SimpleFilter(array('-threads', $this->driver->getConfiguration()->get('ffmpeg.threads'))));
+        }
+        if ($format instanceof VideoInterface) {
+            if (null !== $format->getVideoCodec()) {
+                $filters->add(new SimpleFilter(array('-vcodec', $format->getVideoCodec())));
+            }
+        }
+        if ($format instanceof AudioInterface) {
+            if (null !== $format->getAudioCodec()) {
+                $filters->add(new SimpleFilter(array('-acodec', $format->getAudioCodec())));
+            }
+        }
+
+        // Add the filters
+        foreach ($this->filters as $filter) {
+            $commands = array_merge($commands, $filter->apply($this));
+        }
+
+        if ($format instanceof AudioInterface) {
+            if (null !== $format->getAudioKiloBitrate()) {
+                $commands[] = '-b:a';
+                $commands[] = $format->getAudioKiloBitrate() . 'k';
+            }
+            if (null !== $format->getAudioChannels()) {
+                $commands[] = '-ac';
+                $commands[] = $format->getAudioChannels();
+            }
+        }
+
+        // If the user passed some additional parameters
+        if ($format instanceof VideoInterface) {
+            if (null !== $format->getAdditionalParameters()) {
+                foreach ($format->getAdditionalParameters() as $additionalParameter) {
+                    $commands[] = $additionalParameter;
+                }
+            }
+        }
+
+        // Set the output file in the command
+        $commands[] = $outputPathfile;
+
+        $failure = null;
+
+        try {
+            $this->driver->command($commands);
+        } catch (ExecutionFailureException $e) {
+            throw new RuntimeException('Encoding failed ' . $e->getMessage(), $e->getCode(), $e);
+        }
+
+        return $this;
+    }
 }
